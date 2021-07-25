@@ -1,0 +1,986 @@
+
+## log-normal frailty
+
+K = 2
+r = rep(0, K)
+
+n=200
+
+mm = 1000   ### number of replicates
+
+beta0 =list()
+
+k = 1
+for(k in 1:K){
+if(k%%2!=0){
+beta0[[k]] = c(0.5, -1,0.5)
+   }else beta0[[k]] =  c(0.5, 0.5,-0.5)
+}
+
+gam0 <- 1  #### variance is gamma0
+
+max.loops = 500
+
+tol = 0.0005
+
+p = list()
+k = 1
+for(k in 1:K){
+p[[k]] <- length(beta0[[k]]) ### dimension
+}
+
+tau = 5  ######  the length of the study
+
+##### load necessary function
+
+G.fun <- function(u, r, k){#### 
+      if(r[k] > 0){
+      results = log(((1+r[k]*u)<=0)*10^(-3)+(1+r[k]*u>0)*(1+r[k]*u))/r[k]
+      } else results = u
+      return(results)
+}
+
+dG.fun <- function(u, r, k){#### 
+      if(r[k] > 0){
+      results = 1/(1+r[k]*u)
+      } else results = 1
+      return(results)
+}
+
+G.inv <- function(u, r, k){
+   if (r[k] > 0) {
+      results = (exp(u*r[k])-1)/r[k]
+      } else results = u
+      return(results)
+}
+
+phi <- function(mu,r,k){
+
+results = (1/r[k])^(1/r[k])*mu^(1/r[k]-1)*exp(-1/r[k]*mu)/gamma(1/r[k])
+
+return(results)
+}
+
+##############################################################
+
+loglik.b_n <- function(b, beta, fk, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam){
+
+cdf.b = pnorm(b, mean = 0, sd = 1, lower.tail = TRUE, log.p = FALSE)
+
+g = qlnorm(cdf.b, meanlog = 0, sdlog = sqrt(gam), lower.tail = TRUE, log.p = FALSE)
+
+Expxbetab = sL = sR = Delta = list()
+results = 0
+k = 1
+for(k in 1:K){
+Delta[[k]] = d1[[k]]  + d2[[k]]  
+Expxbetab[[k]] = exp(as.matrix(x[[k]])%*%beta[[k]])*g
+sL[[k]] = exp(-G.fun(rowSums(matrix(rep(fk[[k]], each=n), n, m[k])*matrix(rep(Expxbetab[[k]],m[k]),n, m[k])*Ind.L[[k]]), r, k))
+sR[[k]] = exp(-G.fun(rowSums(matrix(rep(fk[[k]], each=n), n, m[k])*matrix(rep(Expxbetab[[k]],m[k]),n, m[k])*Ind.R[[k]]), r, k))
+
+diff.s = sL[[k]]-sR[[k]]
+diff.s[diff.s==0] =10^(-5)
+
+logsd3 = log(sL[[k]])
+logsd3[logsd3==-Inf]= -10^5
+
+results = results + Delta[[k]]*log(diff.s) +  (1-Delta[[k]])*logsd3
+}
+
+return(results) ## n by 1
+
+}
+
+E.Z.b.fun <- function(b, beta, fk, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam){
+
+cdf.b = pnorm(b, mean = 0, sd = 1, lower.tail = TRUE, log.p = FALSE)
+
+g = qlnorm(cdf.b, meanlog = 0, sdlog = sqrt(gam), lower.tail = TRUE, log.p = FALSE)
+
+Expxbetab = sL = sR = W1 = V1 = Delta = list()
+
+Delta[[k]] = d1[[k]]  + d2[[k]]  
+
+Expxbetab[[k]] = exp(as.matrix(x[[k]])%*%beta[[k]])*g
+
+V1[[k]] = rowSums(matrix(rep(fk[[k]], each=n), n, m[k])*matrix(rep(Expxbetab[[k]],m[k]),n, m[k])*Ind.L[[k]])
+W1[[k]] = rowSums(matrix(rep(fk[[k]], each=n), n, m[k])*matrix(rep(Expxbetab[[k]],m[k]),n, m[k])*Ind.R[[k]])
+sL[[k]] = exp(-G.fun(V1[[k]], r, k))
+sR[[k]] = exp(-G.fun(W1[[k]], r, k))
+
+diff.WV = W1[[k]] - V1[[k]]
+diff.WV[which(diff.WV==0)] = 10^(-5)
+int.mu = rep(1,n)
+if(r[[k]] >0){
+for(i in 1:n){
+int.mu[i] = sum((cc$x*(exp(-cc$x*V1[[k]][i])-exp(-cc$x*W1[[k]][i]))*(1-exp(-diff.WV[i]*cc$x))^(-1)*phi(cc$x,r,k)*exp(cc$x))*cc$w)
+}
+}
+
+diff.s = sL[[k]]-sR[[k]]
+diff.s[diff.s==0] =10^(-5)
+
+if(r[k]>0){
+results = g*diff.s^(-1)*int.mu
+     }else{ 
+          results = g*(1-exp(-diff.WV))^(-1)
+} 
+
+return(results) ## n by 1
+}
+                              
+E.mu.b.fun <- function(b, beta, fk, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam){
+
+cdf.b = pnorm(b, mean = 0, sd = 1, lower.tail = TRUE, log.p = FALSE)
+
+g = qlnorm(cdf.b, meanlog = 0, sdlog = sqrt(gam), lower.tail = TRUE, log.p = FALSE)
+
+Expxbetab = sL = sR = W1 = V1 = Delta = list()
+
+Delta[[k]] = d1[[k]]  + d2[[k]]  
+
+Expxbetab[[k]] = exp(as.matrix(x[[k]])%*%beta[[k]])*g
+
+V1[[k]] = rowSums(matrix(rep(fk[[k]], each=n), n, m[k])*matrix(rep(Expxbetab[[k]],m[k]),n, m[k])*Ind.L[[k]])
+W1[[k]] = rowSums(matrix(rep(fk[[k]], each=n), n, m[k])*matrix(rep(Expxbetab[[k]],m[k]),n, m[k])*Ind.R[[k]])
+sL[[k]] = exp(-G.fun(V1[[k]], r, k))
+sR[[k]] = exp(-G.fun(W1[[k]], r, k))
+
+diff.s.k = sL[[k]]-sR[[k]]
+diff.s.k[diff.s.k==0] = 10^(-5)
+
+if(r[k]>0){
+results = (Delta[[k]]*(sL[[k]]*dG.fun(V1[[k]], r, k) - sR[[k]]*dG.fun(W1[[k]], r, k))*diff.s.k^(-1)+
+               (1-Delta[[k]])*dG.fun(V1[[k]], r, k))*g
+   }else results =g
+
+return(results) ## n by 1
+}
+
+########### for gamma
+                          
+E.logb.fun <-  function(b, beta, fk, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam){
+
+cdf.b = pnorm(b, mean = 0, sd = 1, lower.tail = TRUE, log.p = FALSE)
+
+g = qlnorm(cdf.b, meanlog = 0, sdlog = sqrt(gam), lower.tail = TRUE, log.p = FALSE)
+
+results = log(g)^2
+
+return(results)##### n by 1
+}
+
+
+Expec.fun<-function(E.fun, loglik.b_n, grid, beta, fk, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam){
+
+Exp = eval.h(loglik.b_n, E.fun, grid, X = NULL, W = NULL,beta, fk, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam)###n by 1
+
+return(Exp) ### n by 1
+}
+
+####exp(W) weight function, FUN=loglik.b_n, X=grid.
+
+eval.h <- function(FUN,h.fun,grid,X = NULL,W = NULL,beta, fk, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam){
+
+    if (is.list(grid)) {
+        W <- grid$W
+        X <- grid$X
+    }
+    if (is.null(X) | is.null(W)) 
+        stop("Quadrature points and weights are required. See init.gauss.", 
+            call. = F)
+    FUN <- match.fun(FUN)
+    h.fun <- match.fun(h.fun)
+    Q <- ncol(X)
+    ipq <- length(W)
+    f <- matrix(1,n,ipq)
+    h <- matrix(1,n,ipq)
+
+    ii =1
+    for (ii in 1:ipq) {  
+f[,ii] <- FUN(X[ii],beta, fk, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam)+
+W[ii]
+    }
+    ii = 1
+    for (ii in 1:ipq) {
+h[,ii] <- h.fun(X[ii],beta, fk, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam)
+    }
+    m <- 700 - max(f)
+    f <- f + m
+    f <- exp(f)
+    p1 <- rowSums(f)
+    estimate <- rowSums(f*h)/p1 #### dim(estimate) = n by 1
+    return(estimate)
+}
+
+########################################################################
+
+EM<-function(n, p, K, x, L, R, d1, d2, d3, b.ini, fk.ini, gam.ini,Ind.L,Ind.R,m){
+
+####### initial values ############
+
+b.hat = b.ini
+fk.hat = fk.ini
+gam.hat = gam.ini
+
+loops = 0
+diff.theta = 100
+
+############ judge start ##############
+
+while(diff.theta >= tol && loops < max.loops){
+
+########E-step
+# gaussLaguerre
+
+grid <- init.quad(Q  =  1,  prior  =  list(mu  =  0,  Sigma  = 1))
+
+E.logb = Expec.fun(E.logb.fun, loglik.b_n, grid, b.hat, fk.hat, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam.hat)
+
+E.Z.b = E.mu.b = E.Z = haz = list()
+k = 1
+for(k in 1:K){
+E.Z.b[[k]] = Expec.fun(E.Z.b.fun, loglik.b_n, grid, b.hat, fk.hat, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam.hat) ###n by 1
+
+haz[[k]] = matrix(rep(fk.hat[[k]], each=n), n, m[k])*matrix(rep(exp(as.matrix(x[[k]])%*%b.hat[[k]]),m[k]),n, m[k])
+
+E.mu.b[[k]] = Expec.fun(E.mu.b.fun, loglik.b_n, grid, b.hat, fk.hat, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam.hat) ###n by 1
+
+E.Z.b[[k]][E.Z.b[[k]]==Inf] = 10^5 
+###this specification is only used for some right-censored subjects and does not impact the value of E.Z
+
+E.Z[[k]] = (d1[[k]]+ d2[[k]])*haz[[k]]*E.Z.b[[k]]*(Ind.R[[k]]*(1-Ind.L[[k]])) + 
+                (d1[[k]]+ d2[[k]])*haz[[k]]*E.mu.b[[k]]*(1-Ind.R[[k]])+ 
+                d3[[k]]*haz[[k]]*E.mu.b[[k]]*(1-Ind.L[[k]]) ####  n by m_k
+
+}
+
+######## M-step
+
+fk.est = list()
+diff.f = c()
+k = 1
+for(k in 1:K){
+fk.est[[k]] = apply(E.Z[[k]],2,sum)/sum(E.Z[[k]])
+if(any(is.nan(fk.est[[k]]))) fk.est[[k]] = fk.ini[[k]]
+
+diff.f[k] = max(abs(fk.est[[k]] - fk.hat[[k]]))
+}
+
+#####  beta 
+
+b.est = list()
+diff.beta = c()
+
+U = I = 0
+k = 1
+for(k in 1:K){
+U = t(x[[k]])%*%as.matrix(apply(as.matrix(E.Z[[k]]),1,sum)) - t(x[[k]])%*%as.matrix(E.mu.b[[k]]*exp(x[[k]]%*%b.hat[[k]]))
+I = - t(x[[k]])%*%(matrix(rep((E.mu.b[[k]]*exp(x[[k]]%*%b.hat[[k]])),p[[k]]),n,p[[k]])*x[[k]])
+
+b.est[[k]] = b.hat[[k]] - solve(I)%*%U
+if(any(is.nan(b.est[[k]]))) b.est[[k]] = b.ini[[k]]
+
+diff.beta[k] = max(abs(b.est[[k]] - b.hat[[k]]))
+}
+
+#####obtain the estimator of gamma 
+
+gam.est <- mean(E.logb)
+if(is.nan(gam.est)) gam.est = gam.ini
+
+diff.gam = gam.est - gam.hat
+
+diff.theta = max(c(diff.beta,diff.f, abs(diff.gam)))
+
+b.hat = b.est
+fk.hat = fk.est
+gam.hat = gam.est
+
+loops = loops+1
+
+}
+
+######### judge end #########
+
+return(list(b.hat=b.hat, gam.hat=gam.hat, fk.hat=fk.hat))
+}
+
+
+Profile.var <- function(mu,fk.ini){
+
+####### initial values ############
+
+b.hat  = list()
+
+tem.length = 0
+k = 1
+for(k in 1:K){
+tem.length = tem.length+ p[[k]]
+b.hat[[k]] = mu[(tem.length - p[[k]]+1):tem.length]
+}
+
+gam.hat = mu[(tem.length+1)]
+
+#########################
+
+fk.hat = fk.ini
+
+loops = 0
+diff.theta = 100
+
+############ judge start ##############
+
+while(diff.theta >= tol && loops < max.loops){
+
+########E-step
+# gaussLaguerre
+
+grid <- init.quad(Q  =  1,  prior  =  list(mu  =  0,  Sigma  = 1))
+
+E.logb = Expec.fun(E.logb.fun, loglik.b_n, grid, b.hat, fk.hat, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam.hat)
+
+E.Z.b = E.mu.b = E.Z = haz = list()
+k = 1
+for(k in 1:K){
+E.Z.b[[k]] = Expec.fun(E.Z.b.fun, loglik.b_n, grid, b.hat, fk.hat, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam.hat) ###n by 1
+
+haz[[k]] = matrix(rep(fk.hat[[k]], each=n), n, m[k])*matrix(rep(exp(as.matrix(x[[k]])%*%b.hat[[k]]),m[k]),n, m[k])
+
+E.mu.b[[k]] = Expec.fun(E.mu.b.fun, loglik.b_n, grid, b.hat, fk.hat, x, d1, d2, d3, Ind.L, Ind.R, m, G.fun, k, K, r, gam.hat) ###n by 1
+
+E.Z.b[[k]][E.Z.b[[k]]==Inf] = 10^5 
+###this specification is only used for some right-censored subjects and does not impact the value of E.Z
+
+E.Z[[k]] = (d1[[k]]+ d2[[k]])*haz[[k]]*E.Z.b[[k]]*(Ind.R[[k]]*(1-Ind.L[[k]])) + 
+                (d1[[k]]+ d2[[k]])*haz[[k]]*E.mu.b[[k]]*(1-Ind.R[[k]])+ 
+                d3[[k]]*haz[[k]]*E.mu.b[[k]]*(1-Ind.L[[k]]) ####  n by m_k
+
+}
+
+######## M-step
+
+fk.est = list()
+diff.f = c()
+k = 1
+for(k in 1:K){
+fk.est[[k]] = apply(E.Z[[k]],2,sum)/sum(E.Z[[k]])
+if(any(is.nan(fk.est[[k]]))) fk.est[[k]] = fk.ini[[k]]
+
+diff.f[k] = max(abs(fk.est[[k]] - fk.hat[[k]]))
+}
+
+diff.theta = max(diff.f)
+
+fk.hat = fk.est
+loops = loops+1
+
+}
+
+######### judge end #########
+
+FUN.Like.i <- function(b,beta, lamk, x,Ind.L, Ind.R, m, G.fun, k, K, r, gam){
+
+cdf.b = pnorm(b, mean = 0, sd = 1, lower.tail = TRUE, log.p = FALSE)
+
+g = qlnorm(cdf.b, meanlog = 0, sdlog = sqrt(gam), lower.tail = TRUE, log.p = FALSE)
+
+Expxbetab = sL = sR = Delta = list()
+results = 1
+k = 1
+for(k in 1:K){
+Delta[[k]] = d1[[k]]  + d2[[k]]  
+Expxbetab[[k]] = exp(as.matrix(x[[k]])%*%beta[[k]])*g
+sL[[k]] = exp(-G.fun(rowSums(matrix(rep(fk.hat[[k]], each=n), n, m[k])*matrix(rep(Expxbetab[[k]],m[k]),n, m[k])*Ind.L[[k]]), r, k))
+sR[[k]] = exp(-G.fun(rowSums(matrix(rep(fk.hat[[k]], each=n), n, m[k])*matrix(rep(Expxbetab[[k]],m[k]),n, m[k])*Ind.R[[k]]), r, k))
+
+diff.s = sL[[k]]-sR[[k]]
+diff.s[diff.s==0] =1
+
+results =  results*(diff.s^Delta[[k]])*(sL[[k]]^(1-Delta[[k]]))   
+}
+
+return(results)
+}
+
+W <- grid$W ### exp(W) is weight
+X <- grid$X
+
+Q <- ncol(X)
+ipq <- length(W)
+f <- matrix(1,n,ipq)
+h <- matrix(1,n,ipq)
+
+ii =1
+for (ii in 1:ipq) {  
+f[,ii] <- FUN.Like.i(X[ii],b.hat, fk.hat, x, Ind.L, Ind.R, m, G.fun, k, K, r, gam.hat)*
+exp(W[ii])
+    }
+  
+p1 <- log(rowSums(f)) ## dim(p1) = n by 1
+   
+return(p1)
+}
+
+### univariate method
+
+Marginal<-function(L,R,d1,d2,d3,xx,r,p){
+
+G.fun <- function(u,r){#### 
+      if(r > 0){
+      results = log(((1+r*u)<=0)*10^(-3)+(1+r*u>0)*(1+r*u))/r
+      } else results = u
+      return(results)
+}
+
+dG.fun <- function(u, r){#### 
+      if(r > 0){
+      results = 1/(1+r*u)
+      } else results = 1
+      return(results)
+}
+
+G.inv <- function(u, r){
+   if (r > 0) {
+      results = (exp(u*r)-1)/r
+      } else results = u
+      return(results)
+}
+
+phi <- function(mu,r){
+
+results = (1/r)^(1/r)*mu^(1/r-1)*exp(-1/r*mu)/gamma(1/r)
+
+return(results)
+}
+
+
+Profile.var<-function(beta,lam){
+
+b.ini = beta
+
+lambda.ini = lam
+
+b.hat = b.ini
+
+lambda.hat = lambda.ini
+
+diff.lambda = 100
+
+loops = 0 
+
+############ judge start ##############
+
+while(diff.lambda >= tol && loops < max.loops){
+
+W1 = rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*Ind.L) #### n1 by 1
+
+
+W2 = rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*Ind.R) #### n1 by 1
+
+dd = exp(-G.fun(W1,r))-exp(-G.fun(W2,r))
+dd[which(dd==0)] <- 1
+
+if(r >0){
+E.mu = d1*(1-(r*W2+1)^(-r^(-1)-1))/(1-exp(-G.fun(W2,r))) + 
+   d2*((r*W1+1)^(-r^(-1)-1)-(r*W2+1)^(-r^(-1)-1))/dd + d3*dG.fun(W1,r) #### n by 1
+   } else{ E.mu = 1 
+            }
+
+E.Zd1 = matrix(rep(lambda.hat, each= n), n, k)*matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*
+      ((1-exp(-G.fun(W2,r)))^(-1)*Ind.R + matrix(rep(E.mu,k),n,k)*(1-Ind.R))
+
+diff.W = W2 - W1
+diff.W[which(diff.W==0)] = 1
+
+if(r >0){
+
+int.mu = rep(1,n)
+for(i in 1:n){
+int.mu[i] = sum((cc$x*(exp(-cc$x*W1[i])-exp(-cc$x*W2[i]))*(1-exp(-diff.W[i]*cc$x))^(-1)*phi(cc$x,r)*exp(cc$x))*cc$w)
+}
+
+}
+
+if(r>0){
+E.Zd2 = matrix(rep(lambda.hat, each= n), n, k)*matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*
+(matrix(rep(int.mu,k),n,k)/dd*(Ind.R*(1-Ind.L)) + matrix(rep(E.mu,k),n,k)*(1-Ind.R))
+      }else {
+E.Zd2 = matrix(rep(lambda.hat, each=n), n, k)*matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*
+((1-exp(-diff.W))^(-1)*(Ind.R*(1-Ind.L)) + matrix(rep(E.mu,k),n,k)*(1-Ind.R))
+             }
+
+E.Zd3 = matrix(rep(lambda.hat, each= n), n, k)*
+matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*matrix(rep(E.mu,k),n,k)*(1-Ind.L)
+
+
+E.Z = d1*E.Zd1 + d2*E.Zd2 + d3*E.Zd3 ####  n by k
+
+lambda.est = apply(E.Z,2,sum)/sum(E.Z)
+
+diff.lambda = abs(lambda.est-lambda.hat)
+
+lambda.hat = lambda.est
+
+loops = loops+1
+
+}
+
+######### judge end #########
+
+Delta = d1  + d2
+Expxbeta = exp(as.matrix(xx)%*%b.hat)
+sL = exp(-G.fun(rowSums(matrix(rep(lambda.hat, each=n), n, k)*matrix(rep(Expxbeta,k),n, k)*Ind.L), r))
+sR = exp(-G.fun(rowSums(matrix(rep(lambda.hat, each=n), n, k)*matrix(rep(Expxbeta,k),n, k)*Ind.R), r))
+
+diff.s = sL-sR
+diff.s[diff.s==0] =1
+
+results =  Delta*log(diff.s)+(1-Delta)*log(sL)   
+
+return(results)
+
+}
+
+ 
+
+##############################
+
+t_hold <- max(R[R!=Inf])
+
+### observation times L R
+
+order.LR = unique(sort(c(L[ L!= 0 & L <= t_hold],R[R!= 0 & R <=t_hold]))) ### jump points
+
+k = length(order.LR)
+
+Ind.L = matrix(rep(order.LR,each = n),n,k) <= matrix(rep(L,k),n,k)
+Ind.R = matrix(rep(order.LR,each = n),n,k) <= matrix(rep(R,k),n,k)
+
+b.ini = rep(0,p)
+
+lambda.ini = rep(1/k,k)
+
+b.hat = b.ini
+
+lambda.hat = lambda.ini
+
+diff.theta = 100
+
+loops = 0 
+
+
+############ judge start ##############
+
+while(diff.theta >= tol && loops < max.loops){
+
+W1 = rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*Ind.L) #### n1 by 1
+
+
+W2 = rowSums(matrix(rep(lambda.hat, each=n), n, k)*
+matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*Ind.R) #### n1 by 1
+
+dd = exp(-G.fun(W1,r))-exp(-G.fun(W2,r))
+dd[which(dd==0)] <- 1
+
+if(r >0){
+E.mu = d1*(1-(r*W2+1)^(-r^(-1)-1))/(1-exp(-G.fun(W2,r))) + 
+   d2*((r*W1+1)^(-r^(-1)-1)-(r*W2+1)^(-r^(-1)-1))/dd + d3*dG.fun(W1,r) #### n by 1
+   } else{ E.mu = 1 
+            }
+
+E.Zd1 = matrix(rep(lambda.hat, each= n), n, k)*matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*
+      ((1-exp(-G.fun(W2,r)))^(-1)*Ind.R + matrix(rep(E.mu,k),n,k)*(1-Ind.R))
+
+diff.W = W2 - W1
+diff.W[which(diff.W==0)] = 1
+
+if(r >0){
+
+int.mu = rep(1,n)
+for(i in 1:n){
+int.mu[i] = sum((cc$x*(exp(-cc$x*W1[i])-exp(-cc$x*W2[i]))*(1-exp(-diff.W[i]*cc$x))^(-1)*phi(cc$x,r)*exp(cc$x))*cc$w)
+}
+
+}
+
+if(r>0){
+E.Zd2 = matrix(rep(lambda.hat, each= n), n, k)*matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*
+(matrix(rep(int.mu,k),n,k)/dd*(Ind.R*(1-Ind.L)) + matrix(rep(E.mu,k),n,k)*(1-Ind.R))
+      }else {
+E.Zd2 = matrix(rep(lambda.hat, each=n), n, k)*matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*
+((1-exp(-diff.W))^(-1)*(Ind.R*(1-Ind.L)) + matrix(rep(E.mu,k),n,k)*(1-Ind.R))
+             }
+
+E.Zd3 = matrix(rep(lambda.hat, each= n), n, k)*
+matrix(rep(exp(as.matrix(xx)%*%as.matrix(b.hat)),k),n,k)*matrix(rep(E.mu,k),n,k)*(1-Ind.L)
+
+
+E.Z = d1*E.Zd1 + d2*E.Zd2 + d3*E.Zd3 ####  n by k
+
+lambda.est = apply(E.Z,2,sum)/sum(E.Z)
+
+U = t(xx)%*%as.matrix(apply(as.matrix(E.Z),1,sum)) - t(xx)%*%as.matrix(E.mu*exp(as.matrix(xx)%*%as.matrix(b.hat)))
+
+I = - t(xx)%*%(matrix(rep((E.mu*exp(xx%*%b.hat)),p),n,p)*xx)
+
+b.est = b.hat - solve(I)%*%U
+
+diff.b = abs(b.est-b.hat)
+
+diff.lambda = abs(lambda.est-lambda.hat)
+
+diff.theta = max(diff.b, diff.lambda)
+
+b.hat = b.est
+
+lambda.hat = lambda.est
+
+loops = loops+1
+
+}
+
+######### judge end #########
+
+beta.hat = b.hat
+
+##variance estimation
+
+h = 5*n^(-0.5)  #### tuning parameter
+
+E = h*diag(rep(1, length(b.hat)))  
+
+Me = matrix(0, length(b.hat), n)
+
+i = 1
+for (i in 1:length(b.hat)){
+
+betaEi1 = b.hat + E[,i]
+betaEi2 = b.hat - E[,i]
+
+p1 = Profile.var(betaEi1,lambda.hat) 
+
+p2 = Profile.var(betaEi2,lambda.hat)
+
+Me[i,] = (p1-p2)/(2*h) ####  score function, n by p
+
+}
+
+
+I = Me%*%t(Me)
+
+se.beta = sqrt(diag(solve(I)))
+
+return(list(b.hat = beta.hat, se.b = se.beta))
+}
+
+
+#################################   main code ##################
+
+time1= date()
+
+library(MultiGHQuad)
+library(MASS)
+library(pracma)
+
+cc  <-  gaussLaguerre(17)
+
+BETA.est = see.beta = cp.beta = list()
+meand1 = meand2 = meand3 = meanCure = list()
+
+BETA.marginal.est = see.marginal.beta = cp.marginal.beta = list()
+BETA.Trans.est = see.Trans.beta = cp.Trans.beta = list()
+
+k = 1
+for(k in 1:K){ 
+BETA.est[[k]] = matrix(0,mm,p[[k]])
+see.beta[[k]] = matrix(0,mm,p[[k]])
+cp.beta[[k]] = matrix(0,mm,p[[k]])
+meand1[[k]] = meand2[[k]] = meand3[[k]] = meanCure[[k]] = rep(0,mm)
+
+BETA.marginal.est[[k]] = matrix(0,mm,p[[k]])
+see.marginal.beta[[k]] = matrix(0,mm,p[[k]])
+cp.marginal.beta[[k]] = matrix(0,mm,p[[k]])
+} 
+
+
+GAMMA.est = see.gamma = cp.gamma =cp.gamma.log = rep(0,mm)
+GAMMA.Trans.est  = see.Trans.gamma = cp.Trans.gamma.log = rep(0,mm)
+
+
+##############################################
+
+iter = 1
+for( iter in 1:mm){
+
+b = exp(rnorm(n, 0, sqrt(gam0)))
+
+x1 = rbinom(n,1,0.5)
+
+x2 = runif(n,0,1)
+
+x = prob = t = Expxbetab =list()
+L = R = list()
+cure.prob =c()
+d1 = d2 = d3 =  list()  ## left, interval, and right censoring indicators, respectively
+m = rep(1,K) ### numbers of jump points for each k
+order.LR = Ind.L= Ind.R= list()
+
+Cn = list() ### observation times
+i = 1
+for(i in 1:n){
+
+Tn = runif(100,0.1, 0.3)
+
+Sn = cumsum(Tn)
+
+N = min(which(Sn>tau))-1
+
+Cn[[i]] =c(0,  Sn[1:N])
+}
+
+k = 1
+for(k in 1:K){
+x[[k]] = cbind(1,x1,x2)  #### n by p
+Expxbetab[[k]] = exp(as.matrix(x[[k]])%*%beta0[[k]])*b
+prob[[k]] <- exp(-G.fun(Expxbetab[[k]], r, k))  #### cure probability
+
+D <- rep(-1,n)
+t.k = d1.k = d2.k= d3.k = L.k = R.k = c()
+
+i = 1
+for(i in 1:n){
+         D[i] = rbinom(1,1,prob[[k]][i])
+
+         if(D[i]==1){
+                     t.k[i] = Inf
+                     }else { v <- runif(1, 0, 1)
+
+t.k[i] = -log(1-G.inv(-log(prob[[k]][i]+v*(1-prob[[k]][i])),r,k)*((exp(-as.matrix(x[[k]])%*%beta0[[k]])/b)[i]))
+}
+}
+
+i = 1
+for(i in 1:n){
+
+L.ind =  max(which(t.k[i] >= Cn[[i]]))
+
+if(t.k[i] <= Cn[[i]][2] ){
+                 d1.k[i] = 1
+                 d2.k[i] = d3.k[i] = 0
+                 L.k[i] = 0
+                 R.k[i] = Cn[[i]][2]
+}
+
+if (Cn[[i]][2] < t.k[i] &&  t.k[i] < max(Cn[[i]]) ){
+
+L.k[i] = Cn[[i]][L.ind]
+R.k[i] = Cn[[i]][L.ind +1]
+d2.k[i] = 1
+d1.k[i] = d3.k[i] = 0
+} 
+
+if(t.k[i] >= max(Cn[[i]])){
+
+L.k[i] = max(Cn[[i]]) 
+R.k[i] = Inf
+d3.k[i] = 1
+d1.k[i] = d2.k[i] = 0
+}
+}
+
+
+L[[k]] = L.k 
+R[[k]] = R.k 
+d1[[k]] = d1.k
+d2[[k]] = d2.k
+d3[[k]] = d3.k
+t[[k]] = t.k
+cure.prob[k] = 1 - length(t[[k]][t[[k]]!=Inf])/n
+
+## cure threshold
+
+T_k = max(R[[k]][R[[k]]<Inf])
+
+##T_k = 10^5
+
+### observation times L R
+
+order.LR[[k]] = unique(sort(c(L[[k]][L[[k]]!= 0& L[[k]] <= T_k ],R[[k]][R[[k]]!= 0 & R[[k]] <= T_k]))) ### jump points
+
+m[k] = length(order.LR[[k]])
+
+Ind.L[[k]] = matrix(rep(order.LR[[k]],each = n),n,m[k]) <= matrix(rep(L[[k]],m[k]),n,m[k])
+Ind.R[[k]] = matrix(rep(order.LR[[k]],each = n),n,m[k]) <= matrix(rep(R[[k]],m[k]),n,m[k])
+}
+
+
+####### initial values ############
+
+gam.ini <- 0.1
+
+gam.hat <- gam.ini
+
+b.ini =  list()
+fk.ini = list()
+k = 1
+for(k in 1:K){
+b.ini[[k]] =  rep(0,p[[k]]) 
+fk.ini[[k]] = rep(1/m[k],m[k])
+}
+
+#########we have obtained all initial values so far.
+
+############ MLE ##############
+
+theta.mle = EM(n, p, K, x, L, R, d1, d2, d3, b.ini, fk.ini, gam.ini,Ind.L,Ind.R,m)
+
+b.mle = theta.mle$b.hat
+
+gam.mle = theta.mle$gam.hat
+
+fk.mle = theta.mle$fk.hat
+
+##### variance estimate ## Profile likelihood
+k = 1
+zeta.hat = c()
+for(k in 1:K){
+zeta.hat = c(zeta.hat,b.mle[[k]])
+}
+
+zeta.hat = c(zeta.hat,gam.mle)
+
+h1 = 5*n^(-0.5)  #### tuning parameter
+h = (gam.mle>h1)*h1 + (gam.mle<=h1)*(gam.mle-0.002)
+
+length.b = 0
+k= 1
+for(k in 1:K){
+length.b =length.b+p[[k]]
+} 
+
+length.bg = length.b +1
+
+E = h*diag(rep(1, length.bg))  
+
+Me = matrix(0, length.bg, n)
+
+i = 1
+
+for (i in 1:length.bg){
+
+zetaEi1 = zeta.hat + E[,i]
+zetaEi2 = zeta.hat - E[,i]
+
+p1 = Profile.var(zetaEi1,fk.mle) 
+
+p2 = Profile.var(zetaEi2,fk.mle)
+
+Me[i,] = (p1-p2)/(2*h) ####  score function, n by p
+
+}
+
+
+I = Me%*%t(Me)
+
+se.zeta = sqrt(diag(solve(I)))
+
+
+see.b  = list()
+
+tem.length = 0
+k = 1
+for(k in 1:K){
+tem.length = tem.length+ p[[k]]
+see.b[[k]] = se.zeta[(tem.length - p[[k]]+1):tem.length]
+}
+
+see.gam = se.zeta[(tem.length+1)]
+
+############################
+
+k = 1
+for(k in 1:K){
+
+BETA.est[[k]][iter,] =  b.mle[[k]]
+see.beta[[k]][iter,] =  see.b[[k]]
+cp.beta[[k]][iter,] =  (b.mle[[k]]-1.96*see.b[[k]] < beta0[[k]])*(beta0[[k]]<b.mle[[k]]+1.96*see.b[[k]])
+
+meand1[[k]][iter] =mean(d1[[k]])
+meand2[[k]][iter] =mean(d2[[k]])
+meand3[[k]][iter] =mean(d3[[k]])
+meanCure[[k]][iter] =cure.prob[k]
+}
+
+GAMMA.est[iter] =gam.mle
+see.gamma[iter] =see.gam
+cp.gamma[iter] =  (gam.mle-1.96*see.gam < gam0)*(gam0< gam.mle+1.96*see.gam)
+cp.gamma.log[iter] = (gam.mle*exp(-1.96*see.gam/gam.mle) < gam0)*
+                       (gam0<gam.mle*exp(1.96*see.gam/gam.mle))
+
+
+##### univariate method ######################################
+
+for(k in 1:K){
+
+value = Marginal(L[[k]],R[[k]],d1[[k]],d2[[k]],d3[[k]],x[[k]],r[k],p[[k]])
+
+BETA.marginal.est[[k]][iter,] =value$b.hat
+see.marginal.beta[[k]][iter,] =value$se.b
+
+cp.marginal.beta[[k]][iter,] =  (value$b.hat-1.96*value$se.b < beta0[[k]])*(beta0[[k]]<value$b.hat+1.96*value$se.b)
+}
+
+}
+
+### output
+
+print(c('r=',r))
+print(c('n=',n))
+
+print(c('b=',beta0))
+print(c('gamma=',gam0))
+
+k = 1
+for(k in 1:K){
+
+print(c("bias.beta", k, "=",apply(BETA.est[[k]],2,mean)-beta0[[k]]))
+print(c("sd.beta", k,"=",apply(BETA.est[[k]],2,sd)))
+print(c("see.beta", k, "=",apply(na.omit(see.beta[[k]]),2,mean)))
+print(c("cp.beta", k,"=",apply(na.omit(cp.beta[[k]]),2,mean)))
+
+print(c("cure.rate", k, "=", mean(meanCure[[k]])))
+print(c("left.rate", k, "=", mean(meand1[[k]])))
+print(c("interval.rate", k, "=", mean(meand2[[k]])))
+print(c("right.rate", k, "=", mean(meand3[[k]])-mean(meanCure[[k]])))
+}
+
+print(c("bias.gamma=", mean(GAMMA.est)-gam0))
+print(c("sd.gamma=", sd(GAMMA.est)))
+print(c("see.gamma=", mean(na.omit(see.gamma))))
+print(c("cp.gamma=", mean(na.omit(cp.gamma))))
+print(c("cp.gamma.log.mic=", mean(na.omit(cp.gamma.log))))
+
+
+##### univariate method
+
+k = 1
+for(k in 1:K){
+
+print(c("bias.marginal.beta", k, "=",apply(BETA.marginal.est[[k]],2,mean)-beta0[[k]]))
+print(c("sd.marginal.beta", k,"=",apply(BETA.marginal.est[[k]],2,sd)))
+print(c("see.marginal.beta", k, "=",apply(na.omit(see.marginal.beta[[k]]),2,mean)))
+print(c("cp.marginal.beta", k,"=",apply(na.omit(cp.marginal.beta[[k]]),2,mean)))
+}
+
+
+time2 = date()
+
+print(rbind(time1,time2))
+
+
+
+
